@@ -1,0 +1,25 @@
+server:
+  port: 9001
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus, health, info
+  endpoint:
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: nifi-metrics-service
+monitor:
+  # base URL for flow-controller API
+  api-base-url: ${HOST_URL}
+  user: ${HOST_USERNAME}
+  password: ${HOST_PASSWORD}
+  verify-ssl: false
+  poll-interval-ms: 10000
+spring:
+  http:
+    codecs:
+      max-in-memory-size: 16MB
