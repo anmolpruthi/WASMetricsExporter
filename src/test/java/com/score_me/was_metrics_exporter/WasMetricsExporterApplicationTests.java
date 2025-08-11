@@ -1,4 +1,4 @@
-package com.scoreme.WASMetricsExporter;
+package com.score_me.was_metrics_exporter;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

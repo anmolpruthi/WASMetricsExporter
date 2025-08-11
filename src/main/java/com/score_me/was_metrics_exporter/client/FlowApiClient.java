@@ -1,6 +1,7 @@
-package com.scoreme.WASMetricsExporter.client;
+package com.score_me.was_metrics_exporter.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.apache.tomcat.websocket.AuthenticationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,13 +45,12 @@ public class FlowApiClient {
                         .bodyToMono(String.class)
                         .block();
 
-                if (resp == null) throw new RuntimeException("Empty token response");
+                if (resp == null) throw new AuthenticationException("Could not fetch API token");
 
                 // NiFi typically returns the token as plain text
                 token = resp.trim().replaceAll("^\"|\"$", "");
 
-                // NiFi tokens usually live for a long period (e.g. 12 hours) — set a safe expiry
-                tokenExpiry = Instant.now().plus(12, ChronoUnit.HOURS);
+                tokenExpiry = Instant.now().plus(6, ChronoUnit.HOURS);
                 log.info("Obtained token (len={})", token.length());
             } catch (Exception e) {
                 log.error("Failed to obtain token", e);

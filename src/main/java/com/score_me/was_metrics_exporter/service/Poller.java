@@ -1,4 +1,4 @@
-package com.scoreme.WASMetricsExporter.service;
+package com.score_me.was_metrics_exporter.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -6,6 +6,10 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+
+/**
+ * Service used to classify the run schedule of metrics service
+ */
 @Component
 @EnableScheduling
 public class Poller {
@@ -16,7 +20,7 @@ public class Poller {
         this.metricsService = metricsService;
     }
 
-    @Scheduled(fixedDelayString = "${monitor.poll-interval-ms:30000}")
+    @Scheduled(fixedDelayString = "${monitor.poll-interval-ms:15000}")
     public void run() {
         try {
             metricsService.refresh();

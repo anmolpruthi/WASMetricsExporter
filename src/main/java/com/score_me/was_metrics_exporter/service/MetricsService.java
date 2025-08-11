@@ -1,23 +1,22 @@
-package com.scoreme.WASMetricsExporter.service;
+package com.score_me.was_metrics_exporter.service;
 
-import ch.qos.logback.core.net.ObjectWriter;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.scoreme.WASMetricsExporter.client.FlowApiClient;
-import com.scoreme.WASMetricsExporter.model.GraphBuilder;
-import com.scoreme.WASMetricsExporter.model.ProcessGroupNode;
-import com.scoreme.WASMetricsExporter.model.ProcessorNode;
+import com.score_me.was_metrics_exporter.client.FlowApiClient;
+import com.score_me.was_metrics_exporter.model.GraphBuilder;
+import com.score_me.was_metrics_exporter.entities.ProcessGroupNodeEntity;
+import com.score_me.was_metrics_exporter.entities.ProcessorNodeEntity;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * Class to produce metrics for prometheus exposure and visualization
+ */
 @Slf4j
 @Component
 public class MetricsService {
@@ -27,6 +26,7 @@ public class MetricsService {
 //    private final Logger log = LoggerFactory.getLogger(MetricsService.class);
 
     private final AtomicReference<Double> processorCount = new AtomicReference<>(0.0);
+    private final AtomicReference<Double> processorCountFinal = new AtomicReference<>(0.0);
     private final AtomicReference<Double> maxPathDepth = new AtomicReference<>(0.0);
     private final AtomicReference<Double> avgFanOut = new AtomicReference<>(0.0);
     private final AtomicReference<Double> ipdCount = new AtomicReference<>(0.0);
@@ -52,6 +52,7 @@ public class MetricsService {
         this.client = client;
 
         Gauge.builder("flow_processor_count", processorCount, AtomicReference::get).register(registry);
+        Gauge.builder("flow_actual_processor_count", processorCountFinal, AtomicReference::get).register(registry);
         Gauge.builder("flow_max_path_depth", maxPathDepth, AtomicReference::get).register(registry);
         Gauge.builder("flow_avg_fanout", avgFanOut, AtomicReference::get).register(registry);
         Gauge.builder("flow_ipd_count", ipdCount, AtomicReference::get).register(registry);
@@ -62,15 +63,15 @@ public class MetricsService {
 
         Gauge.builder("flow_heap_used_mb", heapUsedMb, AtomicReference::get).register(registry);
         Gauge.builder("flow_heap_max_mb", heapMaxMb, AtomicReference::get).register(registry);
-        Gauge.builder("heapUtilization", heapUtilization, AtomicReference::get).register(registry);
+        Gauge.builder("flow_heap_utilization", heapUtilization, AtomicReference::get).register(registry);
         Gauge.builder("flow_input_port_count", inputPortCount, AtomicReference::get).register(registry);
         Gauge.builder("flow_output_port_count", outputPortCount, AtomicReference::get).register(registry);
 
     }
 
     public void refresh() throws IOException {
-        Map<String, ProcessorNode> map = graphBuilder.buildProcessorMap();
-        Map<String, ProcessGroupNode> pgMap = graphBuilder.buildProcessGroupMap();
+        Map<String, ProcessorNodeEntity> map = graphBuilder.buildProcessorMap();
+        Map<String, ProcessGroupNodeEntity> pgMap = graphBuilder.buildProcessGroupMap();
         if (map == null || map.isEmpty()) {
             log.warn("No processors found in flow");
             return;
@@ -78,6 +79,8 @@ public class MetricsService {
 
         int P = map.size();
         processorCount.set((double) P);
+
+
 
         int D = computeMaxPGDepth(pgMap);
         maxPathDepth.set((double) D);
@@ -88,7 +91,7 @@ public class MetricsService {
         long ipd = map.values().stream().filter(n -> (n.getIncoming().size() + n.getOutgoing().size()) > 2).count();
         ipdCount.set((double) ipd);
 
-        int threads = map.values().stream().mapToInt(ProcessorNode::getRequestedConcurrentTasks).sum();
+        int threads = map.values().stream().mapToInt(ProcessorNodeEntity::getActiveThreadCount).sum();
         requestedThreads.set((double) threads);
 
         long scripted = map.values().stream().filter(n -> isScriptedType(n.getType()) || containsEL(n.getName())).count();
@@ -97,21 +100,22 @@ public class MetricsService {
 
         double qbpPctVal = computeBackPressurePercent();
         qbpPct.set(qbpPctVal);
-//        double inCount = fetchPortCount("/process-groups/root/input-ports", "inputPorts");
+
         double inCount = graphBuilder.getInputOutputPorts("input");
         inputPortCount.set(inCount);
 
-//        double outCount = fetchPortCount("/process-groups/root/output-ports", "outputPorts");
+
         double outCount = graphBuilder.getInputOutputPorts("output");
         outputPortCount.set(outCount);
 
-        log.info("Max path depth {}", maxPathDepth.get());
+        double processorCountCalculated = map.size() - inCount - outCount;
+        processorCountFinal.set(processorCountCalculated);
 
 
         computeHeapMetrics();
 
-        log.info("\nMetrics updated: \nProcessorCount={}, \ninputPortCount={}, \noutputPortCount={}, \navgFanOut={}, \nipdCount={}, \nscriptedPct=%{}, \nheapUsedMb={} Mb, \nheapMaxMb={} Mb, \nheapGrowthMbPerMin={} Mb",
-                P, inputPortCount, outputPortCount,String.format("%.2f",avgF), ipd, String.format("%.2f", scriptedPctVal), String.format("%.2f",heapUsedMb.get()), String.format("%.2f", heapMaxMb.get()), String.format("%.2f",heapGrowthMbPerMin.get()));
+        log.info("\nMetrics updated: \nProcessorCount = {},\nProcessor Count (after removing I/O ports) = {},  \ninputPortCount = {}, \noutputPortCount={}, \navgFanOut={}, \nmaxProcessGroupDepth = {}, \nconcurrentThreads={}, \nipdCount={}, \nscriptedPct=%{}, \nheapUsedMb={} Mb, \nheapMaxMb={} Mb, \nheapGrowthMbPerMin={} Mb",
+                P, processorCountFinal.get(),inputPortCount.get(), outputPortCount.get(),String.format("%.2f",avgF), maxPathDepth.get(), threads, ipd, String.format("%.2f", scriptedPctVal), String.format("%.2f",heapUsedMb.get()), String.format("%.2f", heapMaxMb.get()), String.format("%.2f",heapGrowthMbPerMin.get()));
     }
 
     private boolean isScriptedType(String type) {
@@ -126,7 +130,7 @@ public class MetricsService {
     }
 
 
-    public int computeMaxPGDepth(Map<String, ProcessGroupNode> pgMap) {
+    public int computeMaxPGDepth(Map<String, ProcessGroupNodeEntity> pgMap) {
         Map<String, Integer> memo = new HashMap<>();
         int best = 0;
         for (String id : pgMap.keySet()) {
@@ -135,7 +139,7 @@ public class MetricsService {
         return best;
     }
 
-    private int dfsPGDepth(String pgId, Map<String, ProcessGroupNode> map,
+    private int dfsPGDepth(String pgId, Map<String, ProcessGroupNodeEntity> map,
                            Set<String> visiting, Map<String, Integer> memo) {
         if (memo.containsKey(pgId)) return memo.get(pgId);
         if (!map.containsKey(pgId)) return 0;

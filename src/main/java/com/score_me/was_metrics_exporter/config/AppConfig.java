@@ -1,4 +1,4 @@
-package com.scoreme.WASMetricsExporter.config;
+package com.score_me.was_metrics_exporter.config;
 
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;

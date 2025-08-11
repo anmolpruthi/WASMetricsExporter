@@ -1,4 +1,4 @@
-package com.scoreme.WASMetricsExporter;
+package com.score_me.was_metrics_exporter;
 
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.SpringApplication;
