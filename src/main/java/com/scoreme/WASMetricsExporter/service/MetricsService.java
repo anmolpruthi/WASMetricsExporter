@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.scoreme.WASMetricsExporter.client.FlowApiClient;
 import com.scoreme.WASMetricsExporter.model.GraphBuilder;
+import com.scoreme.WASMetricsExporter.model.ProcessGroupNode;
 import com.scoreme.WASMetricsExporter.model.ProcessorNode;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -69,6 +70,7 @@ public class MetricsService {
 
     public void refresh() throws IOException {
         Map<String, ProcessorNode> map = graphBuilder.buildProcessorMap();
+        Map<String, ProcessGroupNode> pgMap = graphBuilder.buildProcessGroupMap();
         if (map == null || map.isEmpty()) {
             log.warn("No processors found in flow");
             return;
@@ -77,7 +79,7 @@ public class MetricsService {
         int P = map.size();
         processorCount.set((double) P);
 
-        int D = computeMaxPathDepth(map);
+        int D = computeMaxPGDepth(pgMap);
         maxPathDepth.set((double) D);
 
         double avgF = map.values().stream().mapToInt(n -> n.getOutgoing().size()).average().orElse(0.0);
@@ -103,6 +105,8 @@ public class MetricsService {
         double outCount = graphBuilder.getInputOutputPorts("output");
         outputPortCount.set(outCount);
 
+        log.info("Max path depth {}", maxPathDepth.get());
+
 
         computeHeapMetrics();
 
@@ -121,28 +125,57 @@ public class MetricsService {
         return text.contains("${") || text.contains("#{");
     }
 
-    private int computeMaxPathDepth(Map<String, ProcessorNode> map) {
+
+    public int computeMaxPGDepth(Map<String, ProcessGroupNode> pgMap) {
         Map<String, Integer> memo = new HashMap<>();
         int best = 0;
-        for (String id : map.keySet()) {
-            best = Math.max(best, dfsDepth(id, map, new HashSet<>(), memo));
+        for (String id : pgMap.keySet()) {
+            best = Math.max(best, dfsPGDepth(id, pgMap, new HashSet<>(), memo));
         }
         return best;
     }
 
-    private int dfsDepth(String nodeId, Map<String, ProcessorNode> map, Set<String> visiting, Map<String, Integer> memo) {
-        if (memo.containsKey(nodeId)) return memo.get(nodeId);
-        if (!map.containsKey(nodeId)) return 0;
-        if (visiting.contains(nodeId)) return 0; // cycle protection
-        visiting.add(nodeId);
+    private int dfsPGDepth(String pgId, Map<String, ProcessGroupNode> map,
+                           Set<String> visiting, Map<String, Integer> memo) {
+        if (memo.containsKey(pgId)) return memo.get(pgId);
+        if (!map.containsKey(pgId)) return 0;
+        if (visiting.contains(pgId)) return 0; // ignore cycles
+
+        visiting.add(pgId);
         int best = 0;
-        for (String nxt : map.get(nodeId).getOutgoing()) {
-            best = Math.max(best, 1 + dfsDepth(nxt, map, visiting, memo));
+        for (String child : map.get(pgId).getChildren()) {
+            best = Math.max(best, 1 + dfsPGDepth(child, map, visiting, memo));
         }
-        visiting.remove(nodeId);
-        memo.put(nodeId, best);
+        visiting.remove(pgId);
+
+        memo.put(pgId, best);
         return best;
     }
+
+
+
+//    private int computeMaxPathDepth(Map<String, ProcessorNode> map) {
+//        Map<String, Integer> memo = new HashMap<>();
+//        int best = 0;
+//        for (String id : map.keySet()) {
+//            best = Math.max(best, dfsDepth(id, map, new HashSet<>(), memo));
+//        }
+//        return best;
+//    }
+//
+//    private int dfsDepth(String nodeId, Map<String, ProcessorNode> map, Set<String> visiting, Map<String, Integer> memo) {
+//        if (memo.containsKey(nodeId)) return memo.get(nodeId);
+//        if (!map.containsKey(nodeId)) return 0;
+//        if (visiting.contains(nodeId)) return 0; // cycle protection
+//        visiting.add(nodeId);
+//        int best = 0;
+//        for (String nxt : map.get(nodeId).getOutgoing()) {
+//            best = Math.max(best, 1 + dfsDepth(nxt, map, visiting, memo));
+//        }
+//        visiting.remove(nodeId);
+//        memo.put(nodeId, best);
+//        return best;
+//    }
 
     private double computeBackPressurePercent() {
         try {

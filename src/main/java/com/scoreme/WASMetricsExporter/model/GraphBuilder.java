@@ -84,6 +84,18 @@ public class GraphBuilder {
         return map;
     }
 
+    public Map<String, ProcessGroupNode> buildProcessGroupMap() throws IOException {
+        Map<String, ProcessGroupNode> pgMap = new HashMap<>();
+
+        JsonNode root = client.get(PG_ENDPOINT + "root");
+        if (root == null || !root.has("id")) {
+            throw new IOException("Failed to fetch root PG");
+        }
+        String rootId = root.get("id").asText();
+        crawlProcessGroupHierarchy(rootId, pgMap);
+        return pgMap;
+    }
+
     public int getInputOutputPorts(String portType) throws IOException {
         Map<String, String> portMap = new HashMap<>();
         String portEndpoint;
@@ -144,6 +156,28 @@ public class GraphBuilder {
             }
         } catch (Exception e) {
             log.warn("Error crawling sub-process-groups for {}: {}", pgId, e.getMessage());
+        }
+    }
+
+    private void crawlProcessGroupHierarchy(String pgId, Map<String, ProcessGroupNode> pgMap) throws IOException {
+        JsonNode pg = client.get(PG_ENDPOINT + pgId);
+        if (pg == null || !pg.has("component")) return;
+
+        String name = pg.get("component").has("name") ? pg.get("component").get("name").asText() : "-";
+        ProcessGroupNode node = new ProcessGroupNode(pgId, name);
+        pgMap.put(pgId, node);
+
+        // Fetch child PGs
+        JsonNode childGroups = client.get(PG_ENDPOINT + pgId + "/process-groups");
+        if (childGroups != null && childGroups.has("processGroups")) {
+            for (JsonNode child : childGroups.get("processGroups")) {
+                JsonNode comp = child.get("component");
+                if (comp != null && comp.has("id")) {
+                    String childId = comp.get("id").asText();
+                    node.getChildren().add(childId);
+                    crawlProcessGroupHierarchy(childId, pgMap); // recurse
+                }
+            }
         }
     }
 }

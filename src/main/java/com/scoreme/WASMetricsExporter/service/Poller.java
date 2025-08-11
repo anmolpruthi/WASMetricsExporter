@@ -1,6 +1,5 @@
 package com.scoreme.WASMetricsExporter.service;
 
-import com.scoreme.WASMetricsExporter.service.MetricsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.EnableScheduling;
