@@ -3,17 +3,18 @@ package com.scoreme.WASMetricsExporter.model;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.scoreme.WASMetricsExporter.client.FlowApiClient;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.rmi.StubNotFoundException;
 import java.util.*;
 
+@Slf4j
 @Component
 public class GraphBuilder {
+    private static final String PG_ENDPOINT = "/process-groups/";
     private final FlowApiClient client;
-    private final Logger log = LoggerFactory.getLogger(GraphBuilder.class);
 
     public GraphBuilder(FlowApiClient client) {
         this.client = client;
@@ -25,9 +26,13 @@ public class GraphBuilder {
     public Map<String, ProcessorNode> buildProcessorMap() throws IOException {
         Map<String, ProcessorNode> map = new HashMap<>();
 
-        JsonNode root = client.get("/process-groups/root");
+        JsonNode root = client.get(PG_ENDPOINT + "root");
+        JsonNode processors = client.get(PG_ENDPOINT + "root/processors");
+//        log.info("{}", new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(processors));
+//        log.info("{}", new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(root));
+
         if (root == null || !root.has("id")) {
-            throw new RuntimeException("Failed to fetch root PG");
+            throw new IOException("Failed to fetch root PG");
         }
 
         List<String> pgIds = new ArrayList<>();
@@ -35,7 +40,7 @@ public class GraphBuilder {
 
         for (String pgId : pgIds) {
             try {
-                JsonNode procs = client.get("/process-groups/" + pgId + "/processors");
+                JsonNode procs = client.get(PG_ENDPOINT + pgId + "/processors");
                 if (procs != null && procs.has("processors")) {
                     for (JsonNode p : procs.get("processors")) {
                         JsonNode comp = p.get("component");
@@ -44,6 +49,7 @@ public class GraphBuilder {
                         String name = comp.has("name") ? comp.get("name").asText() : "-";
                         String type = comp.has("type") ? comp.get("type").asText() : "unknown";
                         ProcessorNode node = new ProcessorNode(id, name, type);
+//                        log.info("{}", new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(node));
                         if (comp.has("config") && comp.get("config").has("concurrentTasks")) {
                             node.setRequestedConcurrentTasks(comp.get("config").get("concurrentTasks").asInt(1));
                         }
@@ -51,7 +57,7 @@ public class GraphBuilder {
                     }
                 }
 
-                JsonNode conns = client.get("/process-groups/" + pgId + "/connections");
+                JsonNode conns = client.get(PG_ENDPOINT + pgId + "/connections");
                 if (conns != null && conns.has("connections")) {
                     for (JsonNode c : conns.get("connections")) {
                         JsonNode comp = c.get("component");
@@ -78,6 +84,48 @@ public class GraphBuilder {
         return map;
     }
 
+    public int getInputOutputPorts(String portType) throws IOException {
+        Map<String, String> portMap = new HashMap<>();
+        String portEndpoint;
+        String fieldName;
+        if (portType.equals("input")) { portEndpoint = "/input-ports";} else if (portType.equals("output")) { portEndpoint = "/output-ports";} else {throw new IOException("Invalid port type");}
+        if (portType.equals("input")) { fieldName = "inputPorts";} else if (portType.equals("output")) { fieldName = "outputPorts";} else {throw new IOException("Invalid port type");}
+
+        JsonNode root = client.get(PG_ENDPOINT + "root");
+        if (root == null || !root.has("id")) {
+            throw new IOException("Failed to fetch root PG");
+        }
+        List<String> pgIds = new ArrayList<>();
+        crawlProcessGroups(root.get("id").asText(), pgIds);
+//        log.info("{}", new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(pgIds));
+        for(String pgId : pgIds) {
+            try {
+                JsonNode ports = client.get(PG_ENDPOINT + pgId + portEndpoint);
+                if (ports != null && ports.has(fieldName)) {
+                    for (JsonNode portName : ports.get(fieldName)) {
+                        String id = portName.get("id").asText();
+                        String name = portName.get("component").get("name").asText();
+                        portMap.put(id, name);
+//                        log.info("{}", new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(portName));
+                    }
+                }
+            }catch (Exception e) {
+                log.error("Error processing PG {}: {}", pgId, e.getMessage());
+            }
+//            JsonNode ports = client.get(PG_ENDPOINT + pgId + "/input-ports");
+//            log.info(ports.toString());
+//            if (ports != null && ports.has(fieldName)) {
+//                    for (JsonNode port : ports.get(fieldName)) {
+//                        String id = port.get("id").asText();
+//                        String name = port.get("component").get("name").asText();
+//                        portMap.put(id, name);
+//                        log.info("{}", new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(port));
+//                    }
+//                }
+        }
+        return portMap.size();
+    }
+
     /**
      * Recursively adds all PG ids including nested ones.
      */
@@ -86,11 +134,11 @@ public class GraphBuilder {
         out.add(pgId);
 
         try {
-            JsonNode subGroups = client.get("/process-groups/" + pgId + "/process-groups");
+            JsonNode subGroups = client.get(PG_ENDPOINT + pgId + "/process-groups");
             if (subGroups != null && subGroups.has("processGroups")) {
                 for (JsonNode child : subGroups.get("processGroups")) {
                     if (child.has("id")) {
-                        crawlProcessGroups(child.get("id").asText(), out); 
+                        crawlProcessGroups(child.get("id").asText(), out);
                     }
                 }
             }

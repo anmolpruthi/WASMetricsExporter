@@ -95,17 +95,19 @@ public class MetricsService {
 
         double qbpPctVal = computeBackPressurePercent();
         qbpPct.set(qbpPctVal);
-        double inCount = fetchPortCount("/process-groups/root/input-ports", "inputPorts");
+//        double inCount = fetchPortCount("/process-groups/root/input-ports", "inputPorts");
+        double inCount = graphBuilder.getInputOutputPorts("input");
         inputPortCount.set(inCount);
 
-        double outCount = fetchPortCount("/process-groups/root/output-ports", "outputPorts");
+//        double outCount = fetchPortCount("/process-groups/root/output-ports", "outputPorts");
+        double outCount = graphBuilder.getInputOutputPorts("output");
         outputPortCount.set(outCount);
 
 
         computeHeapMetrics();
 
-        log.info("\nMetrics updated: \nProcessorCount={}, \ninputPortCount={}, \noutputPortCount={}, \navgFanOut={}, \nipdCount={}, \nscriptedPct=%{}, \nheapUsedMb={}, \nheapMaxMb={}, \nheapGrowthMbPerMin={}",
-                P, inputPortCount, outputPortCount,avgF, ipd, scriptedPctVal, heapUsedMb.get(), heapMaxMb.get(), heapGrowthMbPerMin.get());
+        log.info("\nMetrics updated: \nProcessorCount={}, \ninputPortCount={}, \noutputPortCount={}, \navgFanOut={}, \nipdCount={}, \nscriptedPct=%{}, \nheapUsedMb={} Mb, \nheapMaxMb={} Mb, \nheapGrowthMbPerMin={} Mb",
+                P, inputPortCount, outputPortCount,String.format("%.2f",avgF), ipd, String.format("%.2f", scriptedPctVal), String.format("%.2f",heapUsedMb.get()), String.format("%.2f", heapMaxMb.get()), String.format("%.2f",heapGrowthMbPerMin.get()));
     }
 
     private boolean isScriptedType(String type) {
@@ -175,7 +177,7 @@ public class MetricsService {
     private void computeHeapMetrics() {
         try {
             JsonNode diag = client.get("/system-diagnostics");
-            log.info("{}", new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(diag) );
+//            log.info("{}", new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(diag) );
             if (diag == null || !diag.has("systemDiagnostics")) return;
             JsonNode agg = diag.get("systemDiagnostics").get("aggregateSnapshot");
             if (agg == null) return;
@@ -215,16 +217,16 @@ public class MetricsService {
             log.warn("Failed to compute heap metrics: {}", e.getMessage());
         }
     }
-    private double fetchPortCount(String endpoint, String arrayName) {
-        try {
-            JsonNode node = client.get(endpoint);
-            if (node != null && node.has(arrayName)) {
-                return node.get(arrayName).size();
-            }
-        } catch (Exception e) {
-            log.warn("Error fetching {} from {}: {}", arrayName, endpoint, e.getMessage());
-        }
-        return 0.0;
-    }
+//    private double fetchPortCount(String endpoint, String arrayName) {
+//        try {
+//            JsonNode node = client.get(endpoint);
+//            if (node != null && node.has(arrayName)) {
+//                return node.get(arrayName).size();
+//            }
+//        } catch (Exception e) {
+//            log.warn("Error fetching {} from {}: {}", arrayName, endpoint, e.getMessage());
+//        }
+//        return 0.0;
+//    }
 
 }
