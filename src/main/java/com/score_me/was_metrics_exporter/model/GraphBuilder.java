@@ -12,7 +12,7 @@ import java.util.*;
 
 @Slf4j
 @Component
-public class GraphBuilder {
+public abstract class GraphBuilder {
     private static final String PG_ENDPOINT = "/process-groups/";
     private final FlowApiClient client;
 
@@ -28,6 +28,8 @@ public class GraphBuilder {
     }
 
 
+
+
     /**
      * Recursively build the processor graph across all nested process groups.
      */
@@ -35,6 +37,7 @@ public class GraphBuilder {
         Map<String, ProcessorNodeEntity> map = new HashMap<>();
 
         JsonNode root = getRootPg();
+
 
         List<String> pgIds = new ArrayList<>();
         crawlProcessGroups(root.get("id").asText(), pgIds);
@@ -86,6 +89,11 @@ public class GraphBuilder {
         return map;
     }
 
+    /**
+     * Method to build a graph of all the process-groups in that particular node
+     * @return Graph of all process-groups
+     * @throws IOException
+     */
     public Map<String, ProcessGroupNodeEntity> buildProcessGroupMap() throws IOException {
         Map<String, ProcessGroupNodeEntity> pgMap = new HashMap<>();
 
@@ -95,6 +103,11 @@ public class GraphBuilder {
         return pgMap;
     }
 
+    /**
+     * @param portType
+     * @return The number of ports (Input/output) on that node
+     * @throws IOException
+     */
     public int getInputOutputPorts(String portType) throws IOException {
         Map<String, String> portMap = new HashMap<>();
         String portEndpoint;
@@ -126,6 +139,13 @@ public class GraphBuilder {
         }
         return portMap.size();
     }
+
+    /**
+     * Builder method for controller
+     * @param pgId
+     * @return Graph of all the processors in the specified process group
+     * @throws IOException
+     */
     public Map<String, ProcessorNodeEntity> buildProcessorMapForPg(String pgId) throws IOException {
         Map<String, ProcessorNodeEntity> map = new HashMap<>();
         List<String> pgIds = new ArrayList<>();
@@ -159,7 +179,9 @@ public class GraphBuilder {
 
 
     /**
-     * Recursively adds all PG ids including nested ones.
+     * Recursive helper method to identify all processors in the specified node
+     * @param pgId - Id of the process group to be traversed
+     * @param out - A list of all processors in that Process-group
      */
     private void crawlProcessGroups(String pgId, List<String> out) {
         if (pgId == null) return;
@@ -200,4 +222,5 @@ public class GraphBuilder {
             }
         }
     }
+
 }

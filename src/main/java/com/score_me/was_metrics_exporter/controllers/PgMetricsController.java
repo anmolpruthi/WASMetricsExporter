@@ -1,6 +1,5 @@
 package com.score_me.was_metrics_exporter.controllers;
 
-import com.score_me.was_metrics_exporter.entities.ProcessorNodeEntity;
 import com.score_me.was_metrics_exporter.service.PgMetricsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,18 +18,14 @@ public class PgMetricsController {
     private final PgMetricsService pgMetricsService;
 
     @PostMapping
-    public ResponseEntity<?> getMetricsForPg(@RequestBody Map<String, String> body) {
-        String pgId = body.get("processGroupId");
-        if (pgId == null || pgId.isBlank()) {
+    public ResponseEntity<?> getMetricsForPg(@RequestBody Map<String, String> body) throws IOException {
+        String groupId = body.get("processGroupId");
+        if (groupId == null || groupId.isBlank()) {
             return ResponseEntity.badRequest().body("Missing processGroupId");
         }
 
-        try {
-            Map<String, ProcessorNodeEntity> metrics = pgMetricsService.getMetricsForProcessGroup(pgId);
-//            return new ResponseEntity<>("The required metrics are as follows", )
-        } catch (IOException e) {
-            log.error("Error fetching metrics for PG {}: {}", pgId, e.getMessage());
-            return ResponseEntity.internalServerError().body("Error fetching metrics");
-        }
+        Map<String, Long> metrics = pgMetricsService.getMetricsForGroup(groupId);
+        return ResponseEntity.ok(metrics);
     }
 }
+

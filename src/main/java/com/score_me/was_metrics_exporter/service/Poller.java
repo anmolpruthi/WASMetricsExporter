@@ -20,7 +20,7 @@ public class Poller {
         this.metricsService = metricsService;
     }
 
-    @Scheduled(fixedDelayString = "${monitor.poll-interval-ms:15000}")
+    @Scheduled(fixedDelayString = "${monitor.poll-interval-ms:1000}")
     public void run() {
         try {
             metricsService.refresh();
