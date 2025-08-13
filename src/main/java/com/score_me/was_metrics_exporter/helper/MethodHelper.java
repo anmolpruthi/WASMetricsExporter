@@ -5,7 +5,6 @@ import com.score_me.was_metrics_exporter.client.FlowApiClient;
 import com.score_me.was_metrics_exporter.entities.ProcessGroupNodeEntity;
 import com.score_me.was_metrics_exporter.entities.ProcessorNodeEntity;
 import com.score_me.was_metrics_exporter.model.GraphBuilder;
-import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -13,99 +12,31 @@ import java.io.IOException;
 import java.util.*;
 
 @Component
-
 @Slf4j
-public class MethodHelper extends GraphBuilder{
+public class MethodHelper{
 
     private final FlowApiClient client;
+    private final GraphBuilder graphBuilder;
     private static final String PG_ENDPOINT = "/process-groups/";
 
-    public MethodHelper(FlowApiClient client, FlowApiClient client1) {
-        super(client);
-        this.client = client1;
-    }
 
-
-    protected JsonNode getRootPg(String id) throws IOException {
-        return client.get(PG_ENDPOINT + id);
+    public MethodHelper(FlowApiClient client, GraphBuilder graphBuilder) {
+        this.client = client;
+        this.graphBuilder = graphBuilder;
     }
 
     /**
-     * Builder method for controller
-     *
-     * @param groupId
-     * @return Graph of all the processors in the specified process group
-     * @throws IOException
+     * Method to get metrics for a process group.
+     * This method will return a map of metrics for the specified process group.
+     * @param flowApiClient FlowApiClient instance
+     * @param groupId ID of the process group
+     * @return Map of metric names to their values
+     * @throws IOException if an error occurs during processing
      */
-    public Map<String, ProcessorNodeEntity> buildProcessorMap(String groupId) throws IOException {
-        Map<String, ProcessorNodeEntity> map = new HashMap<>();
-        JsonNode root = getRootPg(groupId);
-        List<String> pgIds = new ArrayList<>();
-        crawlProcessGroups(root.get("id").asText(), pgIds);
-
-        for (String pgId : pgIds) {
-            try {
-                JsonNode procs = client.get(PG_ENDPOINT + pgId + "/processors");
-                if (procs != null && procs.has("processors")) {
-                    for (JsonNode p : procs.get("processors")) {
-                        JsonNode status = p.get("status");
-                        if (status == null || !status.has("aggregateSnapshot")) continue;
-                        JsonNode snap = status.get("aggregateSnapshot");
-                        String id = snap.has("id") ? snap.get("id").asText() : null;
-                        String name = snap.has("name") ? snap.get("name").asText() : "-";
-                        String type = snap.has("type") ? snap.get("type").asText() : "unknown";
-                        int activeThreadCount = snap.has("activeThreadCount") ? snap.get("activeThreadCount").asInt() : 0;
-
-                        ProcessorNodeEntity node = new ProcessorNodeEntity(id, name, type);
-                        node.setActiveThreadCount(activeThreadCount);
-                        map.put(id, node);
-                    }
-                }
-
-                JsonNode conns = client.get(PG_ENDPOINT + pgId + "/connections");
-                if (conns != null && conns.has("connections")) {
-                    for (JsonNode c : conns.get("connections")) {
-                        JsonNode comp = c.get("component");
-                        if (comp == null) continue;
-                        JsonNode src = comp.get("source");
-                        JsonNode dst = comp.get("destination");
-                        if (src == null || dst == null) continue;
-
-                        String srcId = src.has("id") ? src.get("id").asText() : null;
-                        String dstId = dst.has("id") ? dst.get("id").asText() : null;
-                        if (srcId != null && dstId != null) {
-                            map.computeIfAbsent(srcId, id -> new ProcessorNodeEntity(id, "unknown-src", "unknown"));
-                            map.computeIfAbsent(dstId, id -> new ProcessorNodeEntity(id, "unknown-dst", "unknown"));
-                            map.get(srcId).getOutgoing().add(dstId);
-                            map.get(dstId).getIncoming().add(srcId);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("Error processing PG {}: {}", pgId, e.getMessage());
-            }
-        }
-        return map;
-    }
-
-    /**
-     * Method to build a graph of all the process-groups in that particular node
-     *
-     * @return Graph of all process-groups
-     * @throws IOException
-     */
-    public Map<String, ProcessGroupNodeEntity> buildProcessGroupMap(String groupId) throws IOException {
-        Map<String, ProcessGroupNodeEntity> pgMap = new HashMap<>();
-        JsonNode root = getRootPg(groupId);
-        String rootId = root.get("id").asText();
-        crawlProcessGroupHierarchy(rootId, pgMap);
-        return pgMap;
-    }
-
-    public Map<String, Long> getMetrics(FlowApiClient flowApiClient, String groupId) throws IOException {
-        Map<String, Long> metrics = new HashMap<>();
-        Map<String, ProcessorNodeEntity> processorMap = buildProcessorMap(groupId);
-        Map<String, ProcessGroupNodeEntity> processGroupMap = buildProcessGroupMap(groupId);
+    public Map<String, Double> getMetrics(FlowApiClient flowApiClient, String groupId) throws IOException {
+        Map<String, Double> metrics = new HashMap<>();
+        Map<String, ProcessorNodeEntity> processorMap = graphBuilder.buildProcessorMap(groupId);
+        Map<String, ProcessGroupNodeEntity> processGroupMap = graphBuilder.buildProcessGroupMap(groupId);
         if (processorMap == null || processorMap.isEmpty()) {
             log.warn("Error creating processor map");
             return Collections.emptyMap();
@@ -114,40 +45,41 @@ public class MethodHelper extends GraphBuilder{
             return Collections.emptyMap();
         }
 
-        long processorCount = processorMap.size();
+        double processorCount = processorMap.size();
         metrics.put("processorCount", processorCount);
 
-        long maxPathDepth = computeMaxDepth(processGroupMap);
+        double maxPathDepth = computeMaxDepth(processGroupMap);
         metrics.put("maxPathDepth", maxPathDepth);
 
-        long avgF = (long) processorMap.values().stream().mapToInt(n -> n.getOutgoing().size()).average().orElse(0.0);
+        double avgF = processorMap.values().stream().mapToInt(n -> n.getOutgoing().size()).average().orElse(0.0);
         metrics.put("avgF", avgF);
 
-        long qbpPctVal = (long) computeBackPressurePercent(flowApiClient);
+        double qbpPctVal =computeBackPressurePercent(flowApiClient);
         metrics.put("qbpPctVal", qbpPctVal);
 
-        long ipd = processorMap.values().stream().filter(n -> (n.getIncoming().size() + n.getOutgoing().size()) > 2).count();
+        double ipd = processorMap.values().stream().filter(n -> (n.getIncoming().size() + n.getOutgoing().size()) > 2).count();
         metrics.put("ipd", ipd);
 
-        long threads = processorMap.values().stream().mapToInt(ProcessorNodeEntity::getActiveThreadCount).sum();
+        double threads = processorMap.values().stream().mapToInt(ProcessorNodeEntity::getActiveThreadCount).sum();
         metrics.put("activeThreads", threads);
 
-        long scripted = processorMap.values().stream().filter(n -> isScriptedType(n.getType()) || containsEL(n.getName())).count();
+        double scripted = processorMap.values().stream().filter(n -> isScriptedType(n.getType()) || containsEL(n.getName())).count();
         double scriptedPctVal = 100.0 * scripted / Math.max(processorCount, 1);
-        metrics.put("scriptedPctVal", (long) scriptedPctVal);
+        metrics.put("scriptedPctVal", scriptedPctVal);
 
-        long inputPortCount = getInputOutputPorts("input", groupId);
+        double inputPortCount = graphBuilder.getPortCount("input", groupId);
         metrics.put("inputPortCount", inputPortCount);
 
-        long outputPortCount = getInputOutputPorts("output", groupId);
+        double outputPortCount = graphBuilder.getPortCount("output", groupId);
         metrics.put("outputPortCount", outputPortCount);
 
-        long processorCountActual = processorCount - inputPortCount - outputPortCount;
+        double processorCountActual = processorCount - inputPortCount - outputPortCount;
         metrics.put("processorCountFinal", processorCountActual);
 
         return metrics;
 
     }
+
 
 
     protected static boolean isScriptedType(String type) {
@@ -240,6 +172,14 @@ public class MethodHelper extends GraphBuilder{
         }
     }
 
+    /**
+     * Recursive method to build a hierarchy of process groups
+     * This method will traverse the process group tree and build a map of ProcessGroupNodeEntity
+     * where the key is the process group ID and the value is the ProcessGroupNodeEntity
+     * @param pgId
+     * @param pgMap
+     * @throws IOException
+     */
     private void crawlProcessGroupHierarchy(String pgId, Map<String, ProcessGroupNodeEntity> pgMap) throws IOException {
         JsonNode pg = client.get(PG_ENDPOINT + pgId);
         if (pg == null || !pg.has("component")) return;
@@ -260,57 +200,6 @@ public class MethodHelper extends GraphBuilder{
                 }
             }
         }
-    }
-
-
-    /**
-     * @param portType
-     * @return The number of ports (Input/output) on that node
-     * @throws IOException
-     */
-    public int getInputOutputPorts(String portType, String groupId) throws IOException {
-        Map<String, String> portMap = new HashMap<>();
-        String portEndpoint;
-        String fieldName;
-
-        if (portType.equals("input")) {
-            portEndpoint = "/input-ports";
-        } else if (portType.equals("output")) {
-            portEndpoint = "/output-ports";
-        } else {
-            throw new IOException("Invalid port type");
-        }
-        if (portType.equals("input")) {
-            fieldName = "inputPorts";
-        } else if (portType.equals("output")) {
-            fieldName = "outputPorts";
-        } else {
-            throw new IOException("Invalid port type");
-        }
-
-        JsonNode root = getRootPg(groupId);
-        if (root == null || !root.has("id")) {
-            throw new IOException("Failed to fetch root PG");
-        }
-
-
-        List<String> pgIds = new ArrayList<>();
-        crawlProcessGroups(root.get("id").asText(), pgIds);
-        for (String pgId : pgIds) {
-            try {
-                JsonNode ports = client.get(PG_ENDPOINT + pgId + portEndpoint);
-                if (ports != null && ports.has(fieldName)) {
-                    for (JsonNode portName : ports.get(fieldName)) {
-                        String id = portName.get("id").asText();
-                        String name = portName.get("component").get("name").asText();
-                        portMap.put(id, name);
-                    }
-                }
-            } catch (Exception e) {
-                log.error("Error processing PG {}: {}", pgId, e.getMessage());
-            }
-        }
-        return portMap.size();
     }
 }
 

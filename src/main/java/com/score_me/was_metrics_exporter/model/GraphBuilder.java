@@ -8,114 +8,89 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Component
-public abstract class GraphBuilder {
+public class GraphBuilder {
     private static final String PG_ENDPOINT = "/process-groups/";
     private final FlowApiClient client;
 
     public GraphBuilder(FlowApiClient client) {
         this.client = client;
     }
-    private JsonNode getRootPg() throws IOException{
-        JsonNode root = client.get(PG_ENDPOINT + "root");
-        if (root == null || !root.has("id")) {
-            throw new IOException("Failed to fetch root PG");
-        }
-        return root;
+
+    private JsonNode getRootPg(String id) {
+        return client.get(PG_ENDPOINT + id);
     }
 
-
-
+    private void printProcessGroupError(String pgId, String errorMessage) {
+        log.error("Error processing Process Group {}: {}", pgId, errorMessage);
+    }
 
     /**
-     * Recursively build the processor graph across all nested process groups.
+     * Method to build a map of all processors in the specified process group
+     * This method will return a map of processor ID to ProcessorNodeEntity
+     * where ProcessorNodeEntity contains the processor name, type, active thread count,
+     * incoming connections, outgoing connections, and the process group ID
+     * @param groupId
+     * @return
+     * @throws IOException
      */
-    public Map<String, ProcessorNodeEntity> buildProcessorMap() throws IOException {
+    public Map<String, ProcessorNodeEntity> buildProcessorMap(String groupId) {
         Map<String, ProcessorNodeEntity> map = new HashMap<>();
-
-        JsonNode root = getRootPg();
-
-
+        JsonNode root = getRootPg(groupId);
         List<String> pgIds = new ArrayList<>();
         crawlProcessGroups(root.get("id").asText(), pgIds);
-
-        for (String pgId : pgIds) {
-            try {
-                JsonNode procs = client.get(PG_ENDPOINT + pgId + "/processors");
-                if (procs != null && procs.has("processors")) {
-                    for (JsonNode p : procs.get("processors")) {
-                        JsonNode status =  p.get("status");
-                        if (status == null || !status.has("id")) continue;
-                        String id = status.get("aggregateSnapshot").get("id").asText();
-                        String name = status.has("aggregateSnapshot") ? status.get("aggregateSnapshot").get("name").asText() : "-";
-                        String type = status.has("aggregateSnapshot") ? status.get("aggregateSnapshot").get("type").asText() : "unknown";
-                        int activeThreadCount = status.has("aggregateSnapshot") ? status.get("aggregateSnapshot").get("activeThreadCount").asInt() : 0;
-
-
-
-                        ProcessorNodeEntity node = new ProcessorNodeEntity(id, name, type);
-                        node.setActiveThreadCount(activeThreadCount);
-                        map.put(id, node);
-                    }
-                }
-
-                JsonNode conns = client.get(PG_ENDPOINT + pgId + "/connections");
-                if (conns != null && conns.has("connections")) {
-                    for (JsonNode c : conns.get("connections")) {
-                        JsonNode comp = c.get("component");
-                        if (comp == null) continue;
-                        JsonNode src = comp.get("source");
-                        JsonNode dst = comp.get("destination");
-                        if (src == null || dst == null) continue;
-
-                        String srcId = src.has("id") ? src.get("id").asText() : null;
-                        String dstId = dst.has("id") ? dst.get("id").asText() : null;
-                        if (srcId != null && dstId != null) {
-                            map.computeIfAbsent(srcId, id -> new ProcessorNodeEntity(id, "unknown-src", "unknown"));
-                            map.computeIfAbsent(dstId, id -> new ProcessorNodeEntity(id, "unknown-dst", "unknown"));
-                            map.get(srcId).getOutgoing().add(dstId);
-                            map.get(dstId).getIncoming().add(srcId);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("Error processing PG {}: {}", pgId, e.getMessage());
-            }
-        }
-
+        addProcessors(pgIds, map);
+        addConnections(pgIds, map);
         return map;
     }
-
     /**
      * Method to build a graph of all the process-groups in that particular node
      * @return Graph of all process-groups
      * @throws IOException
      */
-    public Map<String, ProcessGroupNodeEntity> buildProcessGroupMap() throws IOException {
+    public Map<String, ProcessGroupNodeEntity> buildProcessGroupMap(String groupId) throws IOException {
         Map<String, ProcessGroupNodeEntity> pgMap = new HashMap<>();
-
-        JsonNode root = getRootPg();
+        JsonNode root = getRootPg(groupId);
         String rootId = root.get("id").asText();
         crawlProcessGroupHierarchy(rootId, pgMap);
         return pgMap;
     }
 
     /**
+     * Method to get the input or output ports of a process group
+     * This method will return a map of port ID to port name for the specified port type
      * @param portType
-     * @return The number of ports (Input/output) on that node
+     * @param groupId
+     * @return
      * @throws IOException
      */
-    public int getInputOutputPorts(String portType) throws IOException {
-        Map<String, String> portMap = new HashMap<>();
+    public int getPortCount(String portType, String groupId) throws IOException {
+
         String portEndpoint;
         String fieldName;
-        if (portType.equals("input")) { portEndpoint = "/input-ports";} else if (portType.equals("output")) { portEndpoint = "/output-ports";} else {throw new IOException("Invalid port type");}
-        if (portType.equals("input")) { fieldName = "inputPorts";} else if (portType.equals("output")) { fieldName = "outputPorts";} else {throw new IOException("Invalid port type");}
 
-        JsonNode root = getRootPg();
+        if (portType.equals("input")) {
+            portEndpoint = "/input-ports";
+        } else if (portType.equals("output")) {
+            portEndpoint = "/output-ports";
+        } else {
+            throw new IOException("Invalid port type");
+        }
+        if (portType.equals("input")) {
+            fieldName = "inputPorts";
+        } else if (portType.equals("output")) {
+            fieldName = "outputPorts";
+        } else {
+            throw new IOException("Invalid port type");
+        }
+
+        JsonNode root = getRootPg(groupId);
         if (root == null || !root.has("id")) {
             throw new IOException("Failed to fetch root PG");
         }
@@ -123,7 +98,13 @@ public abstract class GraphBuilder {
 
         List<String> pgIds = new ArrayList<>();
         crawlProcessGroups(root.get("id").asText(), pgIds);
-        for(String pgId : pgIds) {
+        Map<String, String> portMap = buildPortMap(pgIds, fieldName, portEndpoint);
+        return portMap.size();
+    }
+
+    private Map<String, String> buildPortMap(List<String> pgIds, String fieldName, String portEndpoint) {
+        Map<String, String> portMap = new HashMap<>();
+        for (String pgId : pgIds) {
             try {
                 JsonNode ports = client.get(PG_ENDPOINT + pgId + portEndpoint);
                 if (ports != null && ports.has(fieldName)) {
@@ -133,48 +114,12 @@ public abstract class GraphBuilder {
                         portMap.put(id, name);
                     }
                 }
-            }catch (Exception e) {
-                log.error("Error processing PG {}: {}", pgId, e.getMessage());
-            }
-        }
-        return portMap.size();
-    }
-
-    /**
-     * Builder method for controller
-     * @param pgId
-     * @return Graph of all the processors in the specified process group
-     * @throws IOException
-     */
-    public Map<String, ProcessorNodeEntity> buildProcessorMapForPg(String pgId) throws IOException {
-        Map<String, ProcessorNodeEntity> map = new HashMap<>();
-        List<String> pgIds = new ArrayList<>();
-        crawlProcessGroups(pgId, pgIds); // includes nested PGs
-
-        for (String id : pgIds) {
-            try {
-                JsonNode procs = client.get(PG_ENDPOINT + id + "/processors");
-                if (procs != null && procs.has("processors")) {
-                    for (JsonNode p : procs.get("processors")) {
-                        JsonNode status = p.get("status");
-                        if (status == null || !status.has("aggregateSnapshot")) continue;
-
-                        JsonNode snap = status.get("aggregateSnapshot");
-                        String procId = snap.has("id") ? snap.get("id").asText() : null;
-                        String name = snap.has("name") ? snap.get("name").asText() : "-";
-                        String type = snap.has("type") ? snap.get("type").asText() : "unknown";
-                        int activeThreadCount = snap.has("activeThreadCount") ? snap.get("activeThreadCount").asInt() : 0;
-
-                        ProcessorNodeEntity node = new ProcessorNodeEntity(procId, name, type);
-                        node.setActiveThreadCount(activeThreadCount);
-                        map.put(procId, node);
-                    }
-                }
             } catch (Exception e) {
-                log.warn("Error processing PG {}: {}", id, e.getMessage());
+//                log.error("Error processing PG {}: {}", pgId, e.getMessage());
+                printProcessGroupError(pgId, e.getMessage());
             }
         }
-        return map;
+        return  portMap;
     }
 
 
@@ -201,6 +146,14 @@ public abstract class GraphBuilder {
         }
     }
 
+    /**
+     * Recursive method to build a hierarchy of process groups
+     * This method will traverse the process group tree and build a map of ProcessGroupNodeEntity
+     * where the key is the process group ID and the value is the ProcessGroupNodeEntity
+     * @param pgId
+     * @param pgMap
+     * @throws IOException
+     */
     private void crawlProcessGroupHierarchy(String pgId, Map<String, ProcessGroupNodeEntity> pgMap) throws IOException {
         JsonNode pg = client.get(PG_ENDPOINT + pgId);
         if (pg == null || !pg.has("component")) return;
@@ -217,10 +170,83 @@ public abstract class GraphBuilder {
                 if (comp != null && comp.has("id")) {
                     String childId = comp.get("id").asText();
                     node.getChildren().add(childId);
-                    crawlProcessGroupHierarchy(childId, pgMap); // recurse
+                    crawlProcessGroupHierarchy(childId, pgMap);
                 }
             }
         }
     }
+
+
+    /**
+     * Method to add processors to the processor map
+     * This method will traverse the process group hierarchy and build a map of {@link ProcessorNodeEntity}
+     * where the key is the processor ID and the value is the ProcessorNodeEntity.
+     * This method will also add the active thread count for each processor
+     * It will also add the incoming and outgoing connections for each processor
+     * @param pgIds
+     * @param processorNodeEntityMap
+     */
+    private void addProcessors(List<String> pgIds, Map<String, ProcessorNodeEntity> processorNodeEntityMap) {
+        for (String pgId : pgIds) {
+            try{
+                JsonNode procs = client.get(PG_ENDPOINT + pgId + "/processors");
+                if (procs != null && procs.has("processors")) {
+                    for (JsonNode p : procs.get("processors")) {
+                        JsonNode status = p.get("status");
+                        if (status == null || !status.has("aggregateSnapshot")) continue;
+                        JsonNode snap = status.get("aggregateSnapshot");
+                        String id = snap.has("id") ? snap.get("id").asText() : null;
+                        String name = snap.has("name") ? snap.get("name").asText() : "-";
+                        String type = snap.has("type") ? snap.get("type").asText() : "unknown";
+                        int activeThreadCount = snap.has("activeThreadCount") ? snap.get("activeThreadCount").asInt() : 0;
+
+                        ProcessorNodeEntity node = new ProcessorNodeEntity(id, name, type);
+                        node.setActiveThreadCount(activeThreadCount);
+                        processorNodeEntityMap.put(id, node);
+                    }
+                }
+            }
+            catch(Exception e){
+                log.warn("Error processing PG {}: {}", pgId, e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Method to add connections between processors in the process groups
+     * This method will traverse the process group hierarchy and build a map of connections
+     * where the key is the source processor ID and the value is a list of destination processor
+     * @param pgIds
+     * @param processorNodeEntityMap
+     */
+    private void addConnections(List<String> pgIds, Map<String, ProcessorNodeEntity> processorNodeEntityMap) {
+        for (String pgId : pgIds) {
+            try{
+                JsonNode conns = client.get(PG_ENDPOINT + pgId + "/connections");
+                if (conns != null && conns.has("connections")) {
+                    for (JsonNode c : conns.get("connections")) {
+                        JsonNode comp = c.get("component");
+                        if (comp == null) continue;
+                        JsonNode src = comp.get("source");
+                        JsonNode dst = comp.get("destination");
+                        if (src == null || dst == null) continue;
+
+                        String srcId = src.has("id") ? src.get("id").asText() : null;
+                        String dstId = dst.has("id") ? dst.get("id").asText() : null;
+                        if (srcId != null && dstId != null) {
+                            processorNodeEntityMap.computeIfAbsent(srcId, id -> new ProcessorNodeEntity(id, "unknown-src", "unknown"));
+                            processorNodeEntityMap.computeIfAbsent(dstId, id -> new ProcessorNodeEntity(id, "unknown-dst", "unknown"));
+                            processorNodeEntityMap.get(srcId).getOutgoing().add(dstId);
+                            processorNodeEntityMap.get(dstId).getIncoming().add(srcId);
+                        }
+                    }
+                }
+            }
+            catch (Exception e){
+                log.warn("Error processing PG {}: {}", pgId, e.getMessage());
+            }
+        }
+    }
+
 
 }

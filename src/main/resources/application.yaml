@@ -21,6 +21,11 @@ monitor:
   verify-ssl: false
   poll-interval-ms: 100
 spring:
+  jmx:
+    enabled: true
+  application:
+    admin:
+      enabled: true
   http:
     codecs:
       max-in-memory-size: 16MB

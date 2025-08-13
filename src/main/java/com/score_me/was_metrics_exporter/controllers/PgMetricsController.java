@@ -24,7 +24,7 @@ public class PgMetricsController {
             return ResponseEntity.badRequest().body("Missing processGroupId");
         }
 
-        Map<String, Long> metrics = pgMetricsService.getMetricsForGroup(groupId);
+        Map<String, Double> metrics = pgMetricsService.getMetricsForGroup(groupId);
         return ResponseEntity.ok(metrics);
     }
 }

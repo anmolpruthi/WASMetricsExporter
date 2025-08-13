@@ -15,13 +15,14 @@ public class PgMetricsService {
     private final MethodHelper methodHelper;
     private final FlowApiClient flowApiClient;
 
+
     @Autowired
     public PgMetricsService(MethodHelper methodHelper, FlowApiClient flowApiClient) {
         this.methodHelper = methodHelper;
         this.flowApiClient = flowApiClient;
     }
 
-    public Map<String, Long> getMetricsForGroup(String groupId) throws IOException {
+    public Map<String, Double> getMetricsForGroup(String groupId) throws IOException {
 
         return methodHelper.getMetrics(flowApiClient, groupId);
     }
