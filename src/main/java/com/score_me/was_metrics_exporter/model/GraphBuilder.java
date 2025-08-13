@@ -52,7 +52,7 @@ public abstract class GraphBuilder {
                         String id = status.get("aggregateSnapshot").get("id").asText();
                         String name = status.has("aggregateSnapshot") ? status.get("aggregateSnapshot").get("name").asText() : "-";
                         String type = status.has("aggregateSnapshot") ? status.get("aggregateSnapshot").get("type").asText() : "unknown";
-                        int activeThreadCount = status.has("aggregateSnapshot") ? status.get("aggregateSnapshot").get("activeThreadCount").asInt() : Integer.MIN_VALUE;
+                        int activeThreadCount = status.has("aggregateSnapshot") ? status.get("aggregateSnapshot").get("activeThreadCount").asInt() : 0;
 
 
 
