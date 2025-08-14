@@ -49,9 +49,16 @@ public class GraphBuilder {
         addConnections(pgIds, map);
         return map;
     }
+
     /**
-     * Method to build a graph of all the process-groups in that particular node
-     * @return Graph of all process-groups
+     * Method to build a map of all process groups in the specified process group
+     * This method will return a map of process group ID to {@link ProcessGroupNodeEntity}
+     * where {@link ProcessGroupNodeEntity} contains the process group name and a list of child process group IDs
+     * This method will traverse the process group hierarchy and build a map of all process groups
+     * @param groupId
+     * @return Map of process group ID to ProcessGroupNodeEntity
+     * where ProcessGroupNodeEntity contains the process group name and a list of child process group IDs
+     * The map will include the root process group and all its descendants
      * @throws IOException
      */
     public Map<String, ProcessGroupNodeEntity> buildProcessGroupMap(String groupId) throws IOException {
@@ -65,7 +72,7 @@ public class GraphBuilder {
     /**
      * Method to get the input or output ports of a process group
      * This method will return a map of port ID to port name for the specified port type
-     * @param portType
+     * @param portType : "input" or "output"
      * @param groupId
      * @return
      * @throws IOException
@@ -102,6 +109,15 @@ public class GraphBuilder {
         return portMap.size();
     }
 
+    /**
+     * Method to build a map of ports for the specified process groups
+     * This method will return a map of port ID to port name for the specified process groups
+     * @return Map of port ID to port name
+     * @param pgIds
+     * @param fieldName
+     * @param portEndpoint
+     * @return
+     */
     private Map<String, String> buildPortMap(List<String> pgIds, String fieldName, String portEndpoint) {
         Map<String, String> portMap = new HashMap<>();
         for (String pgId : pgIds) {
@@ -115,7 +131,6 @@ public class GraphBuilder {
                     }
                 }
             } catch (Exception e) {
-//                log.error("Error processing PG {}: {}", pgId, e.getMessage());
                 printProcessGroupError(pgId, e.getMessage());
             }
         }
@@ -148,8 +163,8 @@ public class GraphBuilder {
 
     /**
      * Recursive method to build a hierarchy of process groups
-     * This method will traverse the process group tree and build a map of ProcessGroupNodeEntity
-     * where the key is the process group ID and the value is the ProcessGroupNodeEntity
+     * This method will traverse the process group tree and build a map of {@link ProcessGroupNodeEntity}
+     * where the key is the process group ID and the value is the {@link ProcessGroupNodeEntity}
      * @param pgId
      * @param pgMap
      * @throws IOException
@@ -180,7 +195,7 @@ public class GraphBuilder {
     /**
      * Method to add processors to the processor map
      * This method will traverse the process group hierarchy and build a map of {@link ProcessorNodeEntity}
-     * where the key is the processor ID and the value is the ProcessorNodeEntity.
+     * where the key is the processor ID and the value is the {@link ProcessorNodeEntity}.
      * This method will also add the active thread count for each processor
      * It will also add the incoming and outgoing connections for each processor
      * @param pgIds
@@ -217,7 +232,7 @@ public class GraphBuilder {
      * This method will traverse the process group hierarchy and build a map of connections
      * where the key is the source processor ID and the value is a list of destination processor
      * @param pgIds
-     * @param processorNodeEntityMap
+     * @param processorNodeEntityMap of type
      */
     private void addConnections(List<String> pgIds, Map<String, ProcessorNodeEntity> processorNodeEntityMap) {
         for (String pgId : pgIds) {
@@ -243,7 +258,7 @@ public class GraphBuilder {
                 }
             }
             catch (Exception e){
-                log.warn("Error processing PG {}: {}", pgId, e.getMessage());
+                printProcessGroupError(pgId, e.getMessage());
             }
         }
     }

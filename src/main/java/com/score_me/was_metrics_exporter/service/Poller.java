@@ -8,7 +8,9 @@ import org.springframework.stereotype.Component;
 
 
 /**
- * Service used to classify the run schedule of metrics service
+ * Poller class that periodically refreshes metrics data.
+ * It uses the {@link MetricsService} to fetch and update metrics.
+ * The polling interval can be configured via the 'monitor.poll-interval-ms' property.
  */
 @Component
 @EnableScheduling

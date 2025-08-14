@@ -13,6 +13,9 @@ management:
   metrics:
     tags:
       application: was-metrics-service
+    web:
+      client:
+        max-uri-tags: 500
 monitor:
   # base URL for flow-controller API
   api-base-url: ${HOST_URL}
@@ -21,11 +24,14 @@ monitor:
   verify-ssl: false
   poll-interval-ms: 100
 spring:
-  jmx:
-    enabled: true
-  application:
-    admin:
-      enabled: true
+#  jmx:
+#    enabled: true
+#  application:
+#    admin:
+#      enabled: true
+#  output:
+#    ansi:
+#      enabled: ALWAYS
   http:
     codecs:
       max-in-memory-size: 16MB
