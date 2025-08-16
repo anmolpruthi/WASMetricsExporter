@@ -1,4 +1,4 @@
-package com.score_me.was_metrics_exporter.model;
+package com.score_me.was_metrics_exporter.utils;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.score_me.was_metrics_exporter.client.FlowApiClient;
@@ -13,6 +13,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * GraphBuilder is a utility class for building a graph representation of processors and process groups
+ * in a NiFi flow. It provides methods to build maps of processors and process groups, as well as
+ * methods to get input and output ports.
+ * This class uses the {@link FlowApiClient} to interact with the WAS API.
+ */
 @Slf4j
 @Component
 public class GraphBuilder {

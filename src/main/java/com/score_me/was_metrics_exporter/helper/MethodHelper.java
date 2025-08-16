@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.score_me.was_metrics_exporter.client.FlowApiClient;
 import com.score_me.was_metrics_exporter.entities.ProcessGroupNodeEntity;
 import com.score_me.was_metrics_exporter.entities.ProcessorNodeEntity;
-import com.score_me.was_metrics_exporter.model.GraphBuilder;
+import com.score_me.was_metrics_exporter.utils.GraphBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -145,60 +145,6 @@ public class MethodHelper{
         } catch (Exception e) {
             log.warn("Error computing backpressure percent: {}", e.getMessage());
             return 0.0;
-        }
-    }
-
-    /**
-     * Recursive helper method to identify all processors in the specified node
-     *
-     * @param pgId - Id of the process group to be traversed
-     * @param out  - A list of all processors in that Process-group
-     */
-    private void crawlProcessGroups(String pgId, List<String> out) {
-        if (pgId == null) return;
-        out.add(pgId);
-
-        try {
-            JsonNode subGroups = client.get(PG_ENDPOINT + pgId + "/process-groups");
-            if (subGroups != null && subGroups.has("processGroups")) {
-                for (JsonNode child : subGroups.get("processGroups")) {
-                    if (child.has("id")) {
-                        crawlProcessGroups(child.get("id").asText(), out);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Error crawling sub-process-groups for {}: {}", pgId, e.getMessage());
-        }
-    }
-
-    /**
-     * Recursive method to build a hierarchy of process groups
-     * This method will traverse the process group tree and build a map of ProcessGroupNodeEntity
-     * where the key is the process group ID and the value is the ProcessGroupNodeEntity
-     * @param pgId
-     * @param pgMap
-     * @throws IOException
-     */
-    private void crawlProcessGroupHierarchy(String pgId, Map<String, ProcessGroupNodeEntity> pgMap) throws IOException {
-        JsonNode pg = client.get(PG_ENDPOINT + pgId);
-        if (pg == null || !pg.has("component")) return;
-
-        String name = pg.get("component").has("name") ? pg.get("component").get("name").asText() : "-";
-        ProcessGroupNodeEntity node = new ProcessGroupNodeEntity(pgId, name);
-        pgMap.put(pgId, node);
-
-        // Fetch child PGs
-        JsonNode childGroups = client.get(PG_ENDPOINT + pgId + "/process-groups");
-        if (childGroups != null && childGroups.has("processGroups")) {
-            for (JsonNode child : childGroups.get("processGroups")) {
-                JsonNode comp = child.get("component");
-                if (comp != null && comp.has("id")) {
-                    String childId = comp.get("id").asText();
-                    node.getChildren().add(childId);
-                    crawlProcessGroupHierarchy(childId, pgMap); // recurse
-                }
-            }
         }
     }
 }

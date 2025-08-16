@@ -3,6 +3,7 @@ package com.score_me.was_metrics_exporter.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.score_me.was_metrics_exporter.client.FlowApiClient;
 import com.score_me.was_metrics_exporter.helper.MethodHelper;
+import com.score_me.was_metrics_exporter.utils.ExportToFile;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.Getter;
@@ -10,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
 import java.io.IOException;
 import java.text.DecimalFormat;
 import java.util.*;
@@ -97,7 +99,7 @@ public class MetricsService {
 
     private final AtomicReference<Double> instantaneousCpuUsage = new AtomicReference<>(0.0);
 
-    private final AtomicReference<Long> spikeRecoveryTime = new AtomicReference<>(null);
+    private final AtomicReference<Double> spikeRecoveryTime = new AtomicReference<>(null);
 
 
 
@@ -143,7 +145,7 @@ public class MetricsService {
                 .description("Instantaneous system CPU usage")
                 .register(registry);
         Gauge.builder("spike_recovery_time", () ->
-                Optional.ofNullable(spikeRecoveryTime.get()).orElse(0L).doubleValue()
+                Optional.ofNullable(spikeRecoveryTime.get()).orElse(0.0)
         ).register(registry);
 
 //        spikeThreshold = 1.0; // Initialize with a default value to avoid NaN
@@ -206,35 +208,45 @@ public class MetricsService {
             processorCountFinal.set(processorCountCalculated);
 
 
+
+            computeHeapMetrics();
+//            log.info("Heap metrics computed: heapUsedMb={}, heapMaxMb={}, heapUtilizationMb={}, heapGrowthMbPerMin={}",
+//                    df.format(heapUsedMb.get()), df.format(heapMaxMb.get()), df.format(heapUtilizationMb.get()), df.format(heapGrowthMbPerMin.get()));
+
+            metrics.put("heapUsedMb", heapUsedMb.get());
+            metrics.put("heapMaxMb", heapMaxMb.get());
+//            metrics.put("heapUtilizationMb", heapUtilizationMb.get());
+            metrics.put("heapGrowthMbPerMin", heapGrowthMbPerMin.get());
+
+            calculateAvgCpuUsage(meterRegistry);
+            metrics.put("windowAvgCpuUsage", windowAvgCpuUsage.get());
+            metrics.put("instantaneousCpuUsage", instantaneousCpuUsage.get());
+            double score = (MetricWeight.ALPHA.getValue() * processorCountFinal.get())
+                    + (MetricWeight.BETA.getValue() * maxPathDepth.get())
+                    + (MetricWeight.GAMMA.getValue() * avgFanOut.get())
+                    + (MetricWeight.DELTA.getValue() * activeThreads.get())
+                    + (MetricWeight.EPSILON.getValue() * scriptedPct.get())
+                    + (MetricWeight.ZETA.getValue() * qbpPct.get())
+                    + (MetricWeight.ETA.getValue() * heapGrowthMbPerMin.get());
+
+            fcsScore.set(score);
+            metrics.put("fcsScore", fcsScore.get());
+            metrics.put("SpikeRecoveryTimeMs", (spikeRecoveryTime.get() != null ? spikeRecoveryTime.get() : 0.0));
+            metrics.put("SpikeRecoveryTimeSec", (spikeRecoveryTime.get() != null ? spikeRecoveryTime.get() / 1000.0 : 0.0));
+//            log.info("CPU metrics computed: currentWindowAvgCpuUsage={}, \n Instantaneous CPU Usage = {} \nCurrent FCS Score = {}", df.format(windowAvgCpuUsage.get()), df.format(instantaneousCpuUsage.get()), fcsScore.get());
             log.info("Metrics:\n{}",
                     metrics.entrySet().stream()
                             .map(e -> e.getKey() + " = " + df.format(e.getValue()))
                             .reduce("", (a, b) -> a + "\n" + b)
             );
-
+            ExportToFile.exportToExcel(metrics, "metrics.xlsx");
+            log.info("Metrics exported to Excel file: {}", new File("metrics.xlsx").getAbsolutePath());
+            ExportToFile.exportToTxt(metrics, "metrics.txt");
+            log.info("Metrics exported to Txtfile: {}", new File("metrics.txt").getAbsolutePath());
 
         } catch (Exception e) {
             throw new RuntimeException(e.getMessage(), e.getCause());
         }
-
-        computeHeapMetrics();
-        log.info("Heap metrics computed: heapUsedMb={}, heapMaxMb={}, heapUtilizationMb={}, heapGrowthMbPerMin={}",
-                df.format(heapUsedMb.get()), df.format(heapMaxMb.get()), df.format(heapUtilizationMb.get()), df.format(heapGrowthMbPerMin.get()));
-
-        calculateAvgCpuUsage(meterRegistry);
-
-
-        double score = (MetricWeight.ALPHA.getValue() * processorCountFinal.get())
-                + (MetricWeight.BETA.getValue() * maxPathDepth.get())
-                + (MetricWeight.GAMMA.getValue() * avgFanOut.get())
-                + (MetricWeight.DELTA.getValue() * activeThreads.get())
-                + (MetricWeight.EPSILON.getValue() * scriptedPct.get())
-                + (MetricWeight.ZETA.getValue() * qbpPct.get())
-                + (MetricWeight.ETA.getValue() * heapGrowthMbPerMin.get());
-
-        fcsScore.set(score);
-        log.info("CPU metrics computed: currentWindowAvgCpuUsage={}, \n Instantaneous CPU Usage = {} \nCurrent FCS Score = {}", df.format(windowAvgCpuUsage.get()), df.format(instantaneousCpuUsage.get()), fcsScore.get());
-
 
 //        log.info("\nMetrics updated: \nFlow Complexity Score= {}, \nProcessorCount = {},\nProcessor Count (after removing I/O ports) = {},  \ninputPortCount = {}, \noutputPortCount={}, \navgFanOut={}, \nmaxProcessGroupDepth = {}, \nconcurrentThreads={}, \nipdCount={}, \nscriptedPct={}%, \nqueueBackPressure={}, \nheapUsedMb={} Mb, \nheapMaxMb={} Mb, \nheapGrowthMbPerMin={} Mb",
 //                String.format("%.2f",fcsScore.get()),processorCountStarter.get(), processorCountFinal.get(),inputPortCount.get(), outputPortCount.get(),String.format("%.2f",avgF), maxPathDepth.get(), activeThreads.get(), ipd, String.format("%.2f", scriptedPct.get()), String.format("%.2f",qbpPct.get()),String.format("%.2f",heapUsedMb.get()), String.format("%.2f", heapMaxMb.get()), String.format("%.2f",heapGrowthMbPerMin.get()));
@@ -244,19 +256,13 @@ public class MetricsService {
     private void computeHeapMetrics() {
         try {
             JsonNode diag = client.get("/system-diagnostics");
-//            log.info("{}", new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(diag) );
             if (diag == null || !diag.has("systemDiagnostics")) return;
             JsonNode agg = diag.get("systemDiagnostics").get("aggregateSnapshot");
             if (agg == null) return;
 
             long heapUsed = agg.has("usedHeapBytes") ? agg.get("usedHeapBytes").asLong(0) : 0L;
             long heapMax = agg.has("maxHeapBytes") ? agg.get("maxHeapBytes").asLong(0) : 0L;
-//            long heapUtilization = agg.has("heapUtilization") ? agg.get("heapUtilization").asLong(0) : 0L;
-//            double heapUtilization = agg.has("heapUtilization")
-//                    ? agg.get("heapUtilization").asDouble(0.0) // already a percentage
-//                    : 0.0;
             double heapUtilizationValue = heapMax > 0 ? (heapUsed / (double) heapMax) * 100.0 : 0.0;
-//            double heapUtilization = Math.round(heapUtilizationValue * 100.0) / 100.0;
             heapUsedMb.set(heapUsed / (1024.0 * 1024.0));
             heapMaxMb.set(heapMax / (1024.0 * 1024.0));
             heapUtilizationMb.set(heapUtilizationValue / (1024.0 * 1024.0));
@@ -264,7 +270,13 @@ public class MetricsService {
             heapSamples.addLast(heapUsed);
             heapSampleTimestamps.addLast(now);
 
-            while (heapSampleTimestamps.size() > 20) {
+//            while (heapSampleTimestamps.size() > 60*60*24) { // keep samples for 24 hours
+//                // remove the oldest sample if we exceed the limit
+//                heapSamples.removeFirst();
+//                heapSampleTimestamps.removeFirst();
+//            }
+            if (heapSamples.size() > 60 * 60 * 24) { // keep samples for 24 hours
+                // remove the oldest sample if we exceed the limit
                 heapSamples.removeFirst();
                 heapSampleTimestamps.removeFirst();
             }
@@ -283,7 +295,7 @@ public class MetricsService {
                 List<Long> times = new ArrayList<>(heapSampleTimestamps);
 
                 int n = samples.size();
-                long t0 = times.get(0);
+                long t0 = times.getFirst();
 
                 // x in minutes from t0, y in bytes
                 double sumX = 0.0;
@@ -325,19 +337,19 @@ public class MetricsService {
     private void calculateAvgCpuUsage(MeterRegistry meterRegistry) {
         try {
             Double cpuValue = meterRegistry.find("system.cpu.usage").gauge() != null
-                    ? meterRegistry.find("system.cpu.usage").gauge().value()
+                    ? Objects.requireNonNull(meterRegistry.find("system.cpu.usage").gauge()).value()
                     : null;
+
+            log.info(String.valueOf(cpuValue));
+            log.info("{}", System.currentTimeMillis());
 
             if (cpuValue != null && !cpuValue.isNaN()) {
 
                 double percentage = cpuValue * 100;
 
                 percentage = Math.round(percentage * 100.0) / 100.0;
+                log.info("CPU Usage percentage : {}", percentage);
                 instantaneousCpuUsage.set(cpuValue*100);
-//                cpuSum +=percentage;
-//                totalCpuSampleCount++;
-
-//                lifeTimeAvgCpuUsage.set(Math.round((cpuSum / totalCpuSampleCount) * 100.0) / 100.0);
 
                 cpuSamples.add(percentage);
                 if (cpuSamples.size() > maxCpuSamples) {
@@ -346,33 +358,19 @@ public class MetricsService {
 
                 double avg = cpuSamples.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
                 windowAvgCpuUsage.set(Math.round(avg * 100.0) / 100.0);
-                spikeThreshold = avg;
+                spikeThreshold = avg + (avg * 0.2);
+                log.info("Spike Threshold set to: {}", spikeThreshold);
                 if (spikeThreshold < 1) {
                     spikeThreshold = 1;
                 }
-//                if(instantaneousCpuUsage.get() > spikeThreshold) {
-//                    log.warn("CPU usage spike detected: {}% (threshold: {}%)", instantaneousCpuUsage.get(), spikeThreshold);
-//                    if(spikeStartTime == null){
-//                        spikeStartTime = System.currentTimeMillis();
-//                        log.warn("CPU usage spike started: {}", spikeStartTime);
-//                    }
-//                    else {
-//                        if(spikeStartTime!=null){
-//                            long recoveryTime = System.currentTimeMillis() - spikeStartTime;
-//                            spikeRecoveryTime.set(recoveryTime);
-//                            log.warn("CPU usage spike recovery time: {} ms", recoveryTime);
-//                            spikeStartTime = null;
-//                        }
-//                    }
-//                }
                 if (cpuValue*100 > spikeThreshold) {
                     if (spikeStartTime == null) {
                         spikeStartTime = System.currentTimeMillis();
                         log.warn("CPU spike started: {}", spikeStartTime);
-                        spikeRecoveryTime.set(0L); // Reset recovery time when a spike starts
+                        spikeRecoveryTime.set(0.0); // Reset recovery time when a spike starts
                     }
                 } else if (spikeStartTime != null) {
-                    long recoveryTime = System.currentTimeMillis() - spikeStartTime;
+                    double recoveryTime = System.currentTimeMillis() - (double)spikeStartTime;
                     spikeRecoveryTime.set(recoveryTime);
                     log.warn("CPU spike ended. Recovery time: {} ms", recoveryTime);
                     spikeStartTime = null;
