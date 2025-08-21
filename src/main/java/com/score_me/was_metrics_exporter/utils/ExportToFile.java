@@ -1,7 +1,6 @@
 package com.score_me.was_metrics_exporter.utils;
 
 import lombok.extern.slf4j.Slf4j;
-import org.apache.poi.ss.formula.functions.Column;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Component;
@@ -159,7 +158,7 @@ public class ExportToFile {
         for (Map.Entry<String, Double> entry : newMetrics.entrySet()) {
             // ✅ Convert to CamelCase
             String metricName = toCamelCase(entry.getKey());
-            Double metricValue = entry.getValue();
+            double metricValue = Double.parseDouble(df.format(entry.getValue()));
 
             Integer colIndex = headerIndexMap.get(metricName);
             if (colIndex == null) {
