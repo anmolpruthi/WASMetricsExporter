@@ -23,7 +23,6 @@ public class PgMetricsService {
     }
 
     public Map<String, Double> getMetricsForGroup(String groupId) throws IOException {
-
         return methodHelper.getMetrics(flowApiClient, groupId);
     }
 }

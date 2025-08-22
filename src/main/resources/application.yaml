@@ -2,6 +2,9 @@ server:
   port: 9001
   address: 0.0.0.0
 
+apiList:
+  file:
+    path: classpath:api-list.xlsx
 management:
   endpoints:
     web:
@@ -24,6 +27,7 @@ monitor:
   verify-ssl: false
   poll-interval-ms: 100
 spring:
+
 #  jmx:
 #    enabled: true
 #  application:
